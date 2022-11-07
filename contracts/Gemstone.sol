@@ -75,20 +75,6 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         _;
     }
 
-    // modifier minValueCheck(uint256 _minAmount) {
-    //     require(
-    //         msg.value >= _minAmount,
-    //         string(
-    //             abi.encodePacked(
-    //                 "msg.value should be higher than",
-    //                 Strings.toString(_minAmount)
-    //             )
-    //         )
-    //     );
-
-    //     _;
-    // }
-
     function viewProposal(uint256 tokenId)
         public
         view
