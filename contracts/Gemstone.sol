@@ -103,6 +103,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         _;
     }
 
+    /* tokenId에 해당하는 Proposal의 정보를 확인합니다. */
     function viewProposal(uint256 tokenId)
         public
         view
@@ -112,6 +113,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         return Proposals[tokenId];
     }
 
+    /* msg.sender의 tokenId에 대한 투자 정보를 확인합니다. */
     function viewInvestorInfo(uint256 tokenId)
         public
         view
@@ -121,6 +123,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         return Investors[tokenId][msg.sender];
     }
 
+    /* 투자자 배열을 확인합니다. */
     function viewInvestorList(uint256 tokenId)
         public
         view
@@ -130,35 +133,63 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         return Proposals[tokenId].investorList;
     }
 
+    /* USDC의 잔액을 확인합니다. */
     function balanceofUSDC() public view returns (uint256) {
         return USDc.balanceOf(msg.sender);
     }
 
+    /*
+     * User의 Gemstone 컨트랙트에 대한 USDC Allowance를 확인합니다. 해당 값 만큼 User는 컨트랙트에 송금할 수 있습니다.
+     * 해당 값이 모자라는 경우에는 직접 USDC 컨트랙트를 호출하여 approve함수로 값을 증가시켜야 합니다.
+     */
     function checkAllowance() public view returns (uint256) {
         return USDc.allowance(msg.sender, address(this));
     }
 
+    /*
+     * 유저가 회원가입 할 때, 해당 함수를 호출해서 컨트랙트가 유저에게 USDC를 보낼 수 있는 한도를 uint256의 최댓값으로 설정합니다.
+     * 유저가 요청할 때 마다 스토리지를 확인하거나 값을 변경하는 작업은 추가적인 가스를 요하기 때문에, 미리 최댓값으로 설정하도록 했습니다.
+     */
+    function approveUSDC() public {
+        USDc.approve(
+            msg.sender,
+            115792089237316195423570985008687907853269984665640564039457584007913129639935
+        );
+    }
+
+    /* 해당 tokenId의 tokenURI를 관리하는 함수입니다. URIStorage라는 mapping 자료구조에 값을 넣어 저장합니다. */
     function _setURI(uint256 tokenId, string memory tokenURI) internal {
         URIStorage[tokenId] = tokenURI;
     }
 
+    /* funding에 성공했을 경우, 혹은 특정 상황(아직 미정) 해당 proposal에 lock을 걸어줍니다. */
     function lockProposal(uint256 tokenId) internal isApproved {
         ProposalLocked[tokenId] = true;
     }
 
-    function mintNFT(uint256 amount, string memory tokenURI) public isApproved {
+    /* NFT minting, dest 주소로 amount개를 minting하고, tokenURI를 세팅합니다. */
+    function mintNFT(
+        address dest,
+        uint256 amount,
+        string memory tokenURI
+    ) public isApproved {
+        // tokenID 증가
         _tokenIdCounter.increment();
         uint256 newTokenId = _tokenIdCounter.current();
-        _mint(msg.sender, newTokenId, amount, "");
+
+        // mint
+        _mint(dest, newTokenId, amount, "");
+        // setURI
         _setURI(newTokenId, tokenURI);
     }
 
+    /* Proposal을 mint합니다. */
     function mintProposal(uint256 amount, string memory tokenURI)
         public
         payable
         isApproved
     {
-        mintNFT(amount, tokenURI);
+        mintNFT(address(this), amount, tokenURI);
     }
 
     function sendUSDC(
@@ -178,6 +209,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         USDc.transferFrom(_from, _to, $USDC * 10**6);
     }
 
+    /* 투자 시 호출하는 함수 */
     function invest(uint256 tokenId, uint256 $USDC)
         public
         payable
@@ -189,11 +221,17 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         // 투자 기간 확인
         require(block.timestamp <= proposal.deadline, "The deadline is over");
 
+        // 최대 금액 확인
+        require(
+            proposal.currentFunded + $USDC <= proposal.targetAmount,
+            "Too much value"
+        );
+
         // 송금
         sendUSDC(address(this), msg.sender, $USDC);
 
         // 소유권 이전
-        safeTransferFrom(proposal.makerAddress, msg.sender, tokenId, $USDC, "");
+        safeTransferFrom(address(this), msg.sender, tokenId, $USDC, "");
 
         // 이벤트 발생
         emit Deposit(tokenId, msg.sender, $USDC);
@@ -202,6 +240,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         Proposals[tokenId].currentFunded += $USDC;
     }
 
+    /* 투자 철회시 사용하는 함수 */
     function withdraw(uint256 tokenId)
         public
         payable
@@ -215,15 +254,10 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
 
         // 가지고 있는양 확인
         uint256 value = miner.amount;
+        require(value > 0);
 
-        // maker에게 해당 양만큼 소유권 이전
-        safeTransferFrom(
-            msg.sender,
-            Proposals[tokenId].makerAddress,
-            tokenId,
-            value,
-            ""
-        );
+        // contract로 해당 양만큼 소유권 이전
+        safeTransferFrom(msg.sender, address(this), tokenId, value, "");
 
         // 송금
         sendUSDC(msg.sender, address(this), value);
@@ -235,6 +269,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         Proposals[tokenId].currentFunded -= value;
     }
 
+    /* funding 성공 시 호출하는 함수 */
     function fundingSuccess(uint256 tokenId) public isApproved {
         Proposal memory proposal = Proposals[tokenId];
         // 기한에 도달했는지 확인
@@ -249,10 +284,17 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
             "Only maker can execute this function."
         );
 
+        // target amount가 달성되었는지 확인
+        require(
+            proposal.currentFunded >= proposal.targetAmount,
+            "Target Amount of proposal is not fulfilled."
+        );
+
         // Lock 걸어놓기...
         lockProposal(tokenId);
     }
 
+    /* Proposal이 시간이 다 찼지만 funding에 실패한 경우, 혹은 모종의 이유로 취소되는 경우 호출하는 함수 */
     function burnProposal(uint256 tokenId) public isApproved {
         Proposal memory proposal = Proposals[tokenId];
 
