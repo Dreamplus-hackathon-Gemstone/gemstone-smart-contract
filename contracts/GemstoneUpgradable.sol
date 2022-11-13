@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -29,7 +30,13 @@ interface USDC {
     ) external returns (bool);
 }
 
-contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
+contract GemstoneUpgradable is
+    Initializable,
+    ERC1155Upgradeable,
+    OwnableUpgradeable,
+    ERC1155BurnableUpgradeable,
+    UUPSUpgradeable
+{
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIdCounter;
@@ -59,9 +66,9 @@ contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
 
     USDC public USDc;
 
-    constructor() ERC1155("https://ipfs.io/ipfs/metadata{id}.json") {
-        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
-        _tokenIdCounter.increment();
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
     struct Miner {
@@ -131,6 +138,18 @@ contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         _;
     }
 
+    function initialize() public initializer {
+        __Ownable_init();
+        __UUPSUpgradeable_init();
+        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
+    }
+
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyOwner
+    {}
+
     /* tokenId에 해당하는 Proposal의 정보를 확인합니다. */
     function viewProposal(uint256 tokenId)
         public
@@ -162,7 +181,7 @@ contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
     }
 
     /* USDC의 잔액을 확인합니다. */
-    function balanceofUSDC() public view returns (uint256) {
+    function balanceOfUSDC() public view returns (uint256) {
         return USDc.balanceOf(msg.sender);
     }
 
@@ -255,7 +274,7 @@ contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         uint256 $USDC
     ) public payable isApproved {
         // 잔량/송금액 확인
-        require(balanceofUSDC() >= $USDC, "Caller don't have enough USDC");
+        require(balanceOfUSDC() >= $USDC, "Caller don't have enough USDC");
 
         // Allowance 확인
         require(
@@ -511,17 +530,5 @@ contract Gemstone is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
     {
         // Miner중 한명인가?
         // return Agenda
-    }
-
-    // The following functions are overrides required by Solidity.
-    function _beforeTokenTransfer(
-        address operator,
-        address from,
-        address to,
-        uint256[] memory ids,
-        uint256[] memory amounts,
-        bytes memory data
-    ) internal override(ERC1155, ERC1155Supply) {
-        super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
     }
 }
