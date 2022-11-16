@@ -529,6 +529,5 @@ contract GemstoneUpgradable is
         onlyOwner
     {
         // Miner중 한명인가?
-        // return Agenda
     }
 }

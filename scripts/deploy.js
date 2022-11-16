@@ -1,23 +1,18 @@
 const { upgrades } = require("hardhat");
 const hre = require("hardhat");
 
-async function getBalance(address) {
-  const balanceBigInt = await hre.ethers.provider.getBalance(address);
-  return hre.ethers.utils.formatEther(balanceBigInt);
-}
-
 async function main() {
-  const [deployer] = await ethers.getSigners();
-  const GemStone = await hre.ethers.getContractFactory("GemstoneUpgradable");
-  console.log("Deploying Gemstone Upgradable contracts ... ");
+	const [deployer] = await ethers.getSigners();
+	const GemStone = await hre.ethers.getContractFactory("GemstoneUpgradable");
+	console.log("Deploying Gemstone Upgradable contracts ... ");
 
-  const gemStone = await upgrades.deployProxy(GemStone, []);
-  await gemStone.deployed();
-  console.log(`Deployer : ${gemStone.address}`);
-  console.log(`Gemstone contract deployed at ${gemStone.address}`);
+	const gemStone = await upgrades.deployProxy(GemStone, []);
+	await gemStone.deployed();
+	console.log(`Deployer : ${gemStone.address}`);
+	console.log(`Gemstone contract deployed at ${gemStone.address}`);
 }
 
 main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+	console.error(error);
+	process.exitCode = 1;
 });
