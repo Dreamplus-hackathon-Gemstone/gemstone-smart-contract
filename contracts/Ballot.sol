@@ -36,6 +36,7 @@ contract Ballot is
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
+        _tokenIdCounter.increment();
         _disableInitializers();
     }
 
@@ -47,6 +48,7 @@ contract Ballot is
 
     struct Agenda {
         uint256 numberOfMiner;
+        uint256 winner;
         string tokenURI;
         Status status;
         address chairPerson;
@@ -115,22 +117,32 @@ contract Ballot is
         onlyOwner
     {}
 
+    /// @notice showAgenda
+    /// @dev Explain to a developer any extra details
+    /// @param agendaId Token ID for agenda
+    /// @return Agenda Agenda Information
+    function showAgenda(uint256 agendaId) external view returns(Agenda memory) {
+        return AgendaTable[agendaId];
+    }
+
     /// @notice setAgenda
     /// @param nom Number of miners.
     /// @param tokenURI Token URI for metadata of agenda.
     /// @param chairPerson Address of chairPerson.
     function setAgenda(
         uint256 nom,
+        uint256[] calldata candidates,
         string calldata tokenURI,
         address chairPerson
     ) external onlyOwner {
         _tokenIdCounter.increment();
         uint256 agendaId = _tokenIdCounter.current();
-        mint(address(this), agendaId, 1, "");
+        mint(chairPerson, agendaId, 1, "");
 
         AgendaTable[agendaId].numberOfMiner = nom;
         AgendaTable[agendaId].tokenURI = tokenURI;
         AgendaTable[agendaId].chairPerson = chairPerson;
+        AgendaTable[agendaId].candidates = candidates;
         AgendaTable[agendaId].status = Status.pending;
 
         emit AgendaOpen(agendaId, chairPerson);
@@ -163,7 +175,7 @@ contract Ballot is
         VoterTable[agendaId][voterAddr].agendaId = agendaId;
         VoterTable[agendaId][voterAddr].weight = weight;
         VoterTable[agendaId][voterAddr].value = 0;
-        VoterTable[agendaId][voterAddr].voted = agendaId;
+        VoterTable[agendaId][voterAddr].voted = 0;
         VoterTable[agendaId][voterAddr].voterAddress = voterAddr;
     }
 
@@ -189,8 +201,8 @@ contract Ballot is
         AgendaTable[agendaId].candidates[value] += voter.weight;
         AgendaTable[agendaId].voters.push(voter);
         // 투표 완료로 갱신
-        VoterTable[agendaId][voterAddr].value = voter.value;
-        VoterTable[agendaId][voterAddr].voted = voter.voted;
+        VoterTable[agendaId][voterAddr].value = value;
+        VoterTable[agendaId][voterAddr].voted = 1;
     }
 
     /// @notice Finish voting
@@ -208,7 +220,7 @@ contract Ballot is
 
         // 전체 Miner의 60%가 투표해야 종료 가능합니다.
         require(
-            agenda.voters.length > (agenda.numberOfMiner * 6) / 10,
+            agenda.voters.length > agenda.numberOfMiner * 6 / 10,
             "Participation must be at least 60% of the number of whole miners"
         );
 
@@ -217,6 +229,7 @@ contract Ballot is
 
         // 상태 갱신
         AgendaTable[agendaId].status = Status(2);
+        AgendaTable[agendaId].winner = winner;
 
         // Event
         emit AgendaClose(agendaId, winner);
@@ -231,14 +244,16 @@ contract Ballot is
         returns (uint256 winner)
     {
         Agenda memory agenda = AgendaTable[agendaId];
-
         uint256 winningVoteCount = 0;
         for (uint256 i = 0; i < agenda.voters.length; i++) {
-            if (agenda.candidates[i] > winningVoteCount) {
-                winningVoteCount = agenda.candidates[i];
-                winner = i;
+            Voter memory v = agenda.voters[i];
+            agenda.candidates[v.value] += v.weight;
+            if (agenda.candidates[v.value] > winningVoteCount) {
+                winningVoteCount = agenda.candidates[v.value];
+                winner = v.value;
             }
         }
+        return winner;
     }
 
     /// @notice Remove Agenda

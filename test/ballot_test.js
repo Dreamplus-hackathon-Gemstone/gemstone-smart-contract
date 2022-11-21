@@ -19,19 +19,18 @@ async function deployBallot() {
 }
 
 describe("Ballot", () => {
-	it("Contract Owner test", async function () {
-		const { ballot, owner } = await loadFixture(deployBallot);
-		const contractOwner = await ballot.owner();
-		expect(contractOwner).to.equal(owner.address);
-	});
 
-	it("Set Approve Test", async function () {
+	it("Ballot Test", async function () {
 		const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
 			deployBallot
 		);
 		await ballot.connect(addr1).setApprovalForAll(ballot.address, true);
 		await ballot.connect(addr2).setApprovalForAll(ballot.address, true);
 		await ballot.connect(owner).setApprovalForAll(ballot.address, true);
+
+		
+		const contractOwner = await ballot.owner();
+		expect(contractOwner, "Owner Test").to.equal(owner.address);
 
 		const t1 = await ballot
 			.connect(owner)
@@ -46,5 +45,25 @@ describe("Ballot", () => {
 		expect(t1).to.equal(true);
 		expect(t2).to.equal(true);
 		expect(t3).to.equal(true);
-	});
+
+		await ballot.connect(owner).setAgenda(2, [0, 0, 0],"www.naver.com", addr2.address);
+		const setAgendaTest = await ballot.connect(owner).showAgenda(1);
+		expect(setAgendaTest.chairPerson).to.equal(addr2.address);
+
+
+		await ballot.connect(owner).Register(1, 10, addr1.address);
+		await ballot.connect(owner).Register(1, 20, owner.address);
+		
+		await ballot.connect(owner).Vote(1, 1, addr1.address);
+		await ballot.connect(owner).Vote(1, 2, owner.address);
+		const voteTest = await ballot.connect(owner).showAgenda(1);
+		expect(voteTest.voters.length).to.equal(2);
+		
+		const ret = await ballot.connect(owner).Finish(1, addr2.address);
+
+		const finishTest = await ballot.connect(owner).showAgenda(1);
+		
+		expect(finishTest.status).to.equal(2);
+		expect(Number(finishTest.winner)).to.equal(2);
+	})
 });
