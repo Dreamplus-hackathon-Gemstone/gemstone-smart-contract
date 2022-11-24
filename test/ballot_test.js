@@ -4,7 +4,7 @@ const {
 } = require("@nomicfoundation/hardhat-network-helpers");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
-const { before, it } = require("mocha");
+const { before, it, beforeEach } = require("mocha");
 const { upgrades, ethers } = require("hardhat");
 const hre = require("hardhat");
 require("dotenv").config();
@@ -18,7 +18,64 @@ async function deployBallot() {
 	return { Ballot, ballot, owner, addr1, addr2 };
 }
 
-describe("Ballot", () => {
+describe("Full Coverage", () => {
+
+	describe("Deploy & Set Approval", () => {
+
+		it("Deploy & Set Approval", async function () {
+			const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
+				deployBallot
+			);
+			await ballot.connect(addr1).setApprovalForAll(ballot.address, true);
+			await ballot.connect(addr2).setApprovalForAll(ballot.address, true);
+			await ballot.connect(owner).setApprovalForAll(ballot.address, true);
+	
+			const contractOwner = await ballot.owner();
+		})
+	})
+
+	describe("Owner Test", () => {
+		it("Owner Test", async function () {
+			const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
+				deployBallot
+			);
+			await ballot.connect(addr1).setApprovalForAll(ballot.address, true);
+			await ballot.connect(addr2).setApprovalForAll(ballot.address, true);
+			await ballot.connect(owner).setApprovalForAll(ballot.address, true);
+	
+			
+			const contractOwner = await ballot.owner();
+			expect(contractOwner, "Owner Test").to.equal(owner.address);
+		})
+	})
+
+	describe('Agenda Test', () => {
+		it("Set Agenda Test", async function () {
+			const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
+				deployBallot
+			);
+			await ballot.connect(addr1).setApprovalForAll(ballot.address, true);
+			await ballot.connect(addr2).setApprovalForAll(ballot.address, true);
+			await ballot.connect(owner).setApprovalForAll(ballot.address, true);
+
+			await ballot.connect(owner).setAgenda(2, [0, 0, 0],"www.naver.com", addr2.address);
+			const setAgendaTest = await ballot.connect(owner).showAgenda(1);
+			expect(setAgendaTest.chairPerson).to.equal(addr2.address);
+		})
+
+		it("Register Test", async function () {
+			const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
+				deployBallot
+			);
+			await ballot.connect(addr1).setApprovalForAll(ballot.address, true);
+			await ballot.connect(addr2).setApprovalForAll(ballot.address, true);
+			await ballot.connect(owner).setApprovalForAll(ballot.address, true);
+
+			await ballot.connect(owner).setAgenda(2, [0, 0, 0],"www.naver.com", addr2.address);
+			await ballot.connect(owner).Register(1, 10, addr1.address);
+			await ballot.connect(owner).Register(1, 20, owner.address);
+		})
+	 })
 
 	it("Ballot Test", async function () {
 		const { Ballot, ballot, owner, addr1, addr2 } = await loadFixture(
