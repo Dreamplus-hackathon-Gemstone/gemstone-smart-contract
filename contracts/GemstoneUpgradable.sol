@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.9;
 
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -29,7 +30,13 @@ interface USDC {
     ) external returns (bool);
 }
 
-contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
+contract GemstoneUpgradable is
+    Initializable,
+    ERC1155Upgradeable,
+    OwnableUpgradeable,
+    ERC1155BurnableUpgradeable,
+    UUPSUpgradeable
+{
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIdCounter;
@@ -38,6 +45,8 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
     event MintProposal(uint256 tokenId, address indexed maker);
 
     event MintMovie(uint256 tokenId, address indexed maker);
+
+    event MintAgenda(uint256 tokenId, address indexed miner);
 
     event Deposit(uint256 tokenId, address indexed miner, uint256 $USDC);
 
@@ -57,9 +66,9 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
 
     USDC public USDc;
 
-    constructor() ERC1155("") {
-        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
-        _tokenIdCounter.increment();
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
     struct Miner {
@@ -74,24 +83,50 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         uint256 currentFunded;
         address makerAddress;
         Miner[] investorList;
+        Agenda[] agendaList;
     }
 
-    mapping(uint256 => Proposal) Proposals;
+    struct Agenda {
+        uint256 proposalId;
+        uint256 agendaId;
+        bool status;
+    }
 
-    mapping(uint256 => bool) ProposalLocked;
+    struct Voter {
+        uint256 weight;
+        uint256 vote;
+        bool voted;
+    }
 
+    // tokenId와 proposal 정보 매핑
+    mapping(uint256 => Proposal) ProposalMapping;
+
+    // proposal의 잠금 상태 확인
+    mapping(uint256 => bool) ProposalLockStatus;
+
+    // tokenId => 주소 => Miner ... 개인 투자자의 정보를 확인하거나, 투자자가 맞는 지 확인할 때 사용
     mapping(uint256 => mapping(address => Miner)) Investors;
 
+    // agendaId => Agenda ... Agenda 정보 확인할 때 사용
+    mapping(uint256 => Agenda) AgendaTable;
+
+    // agendaId => Voter[] ... 투표가 끝났을 때 투표자 목록으로써 사용
+    mapping(uint256 => Voter[]) VoterTable;
+
+    // agendaId => address => Voter ... 해당 Agenda에 투표를 했는지, 확인할 때 사용
+    mapping(uint256 => mapping(address => Voter)) VoterMapping;
+
+    // token URI Storage
     mapping(uint256 => string) URIStorage;
 
     modifier isLocked(uint256 tokenId) {
-        require(ProposalLocked[tokenId] == false);
+        require(ProposalLockStatus[tokenId] == false);
 
-        ProposalLocked[tokenId] = true;
+        ProposalLockStatus[tokenId] = true;
 
         _;
 
-        ProposalLocked[tokenId] = false;
+        ProposalLockStatus[tokenId] = false;
     }
 
     modifier isApproved() {
@@ -103,6 +138,18 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         _;
     }
 
+    function initialize() public initializer {
+        __Ownable_init();
+        __UUPSUpgradeable_init();
+        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
+    }
+
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyOwner
+    {}
+
     /* tokenId에 해당하는 Proposal의 정보를 확인합니다. */
     function viewProposal(uint256 tokenId)
         public
@@ -110,7 +157,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         isApproved
         returns (Proposal memory)
     {
-        return Proposals[tokenId];
+        return ProposalMapping[tokenId];
     }
 
     /* msg.sender의 tokenId에 대한 투자 정보를 확인합니다. */
@@ -130,11 +177,11 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         isApproved
         returns (Miner[] memory)
     {
-        return Proposals[tokenId].investorList;
+        return ProposalMapping[tokenId].investorList;
     }
 
     /* USDC의 잔액을 확인합니다. */
-    function balanceofUSDC() public view returns (uint256) {
+    function balanceOfUSDC() public view returns (uint256) {
         return USDc.balanceOf(msg.sender);
     }
 
@@ -164,7 +211,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
 
     /* funding에 성공했을 경우, 혹은 특정 상황(아직 미정) 해당 proposal에 lock을 걸어줍니다. */
     function lockProposal(uint256 tokenId) internal isApproved {
-        ProposalLocked[tokenId] = true;
+        ProposalLockStatus[tokenId] = true;
     }
 
     /* NFT minting, dest 주소로 amount개를 minting하고, tokenURI를 세팅합니다. */
@@ -172,7 +219,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         address dest,
         uint256 amount,
         string memory tokenURI
-    ) public isApproved {
+    ) internal returns (uint256) {
         // tokenID 증가
         _tokenIdCounter.increment();
         uint256 newTokenId = _tokenIdCounter.current();
@@ -181,15 +228,44 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         _mint(dest, newTokenId, amount, "");
         // setURI
         _setURI(newTokenId, tokenURI);
+
+        return newTokenId;
     }
 
     /* Proposal을 mint합니다. */
     function mintProposal(uint256 amount, string memory tokenURI)
-        public
-        payable
-        isApproved
+        internal
+        returns (uint256)
     {
-        mintNFT(address(this), amount, tokenURI);
+        uint256 tokenId = mintNFT(address(this), amount, tokenURI);
+
+        emit MintProposal(tokenId, address(this));
+
+        return tokenId;
+    }
+
+    /* Agenda를 mint합니다. */
+    function mintAgenda(address miner, string calldata tokenURI)
+        internal
+        returns (uint256)
+    {
+        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
+
+        emit MintAgenda(tokenId, miner);
+
+        return tokenId;
+    }
+
+    /* Movie를 mint합니다. */
+    function mintMovie(address maker, string calldata tokenURI)
+        internal
+        returns (uint256)
+    {
+        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
+
+        emit MintAgenda(tokenId, maker);
+
+        return tokenId;
     }
 
     function sendUSDC(
@@ -198,7 +274,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         uint256 $USDC
     ) public payable isApproved {
         // 잔량/송금액 확인
-        require(balanceofUSDC() >= $USDC, "Caller don't have enough USDC");
+        require(balanceOfUSDC() >= $USDC, "Caller don't have enough USDC");
 
         // Allowance 확인
         require(
@@ -209,6 +285,38 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         USDc.transferFrom(_from, _to, $USDC * 10**6);
     }
 
+    /* Proposal을 업로드 합니다. */
+    function propose(
+        uint256 targetAmount,
+        uint256 deadline,
+        string calldata tokenURI
+    ) public payable isApproved {
+        // 최소 target amount
+        require(
+            targetAmount > 10000000000,
+            "Minimum target amount is 10,000$, Check your target amount"
+        );
+
+        // tokenID 증가
+        _tokenIdCounter.increment();
+
+        // tokenID
+        uint256 newTokenId = _tokenIdCounter.current();
+
+        // Proposal mint
+        mintProposal(targetAmount, tokenURI);
+
+        // Storage 갱신
+        ProposalMapping[newTokenId].tokenId = newTokenId;
+        ProposalMapping[newTokenId].targetAmount = targetAmount;
+        ProposalMapping[newTokenId].deadline = deadline;
+        ProposalMapping[newTokenId].currentFunded = 0;
+        ProposalMapping[newTokenId].makerAddress = msg.sender;
+        ProposalMapping[newTokenId].tokenId = newTokenId;
+
+        ProposalLockStatus[newTokenId] = false;
+    }
+
     /* 투자 시 호출하는 함수 */
     function invest(uint256 tokenId, uint256 $USDC)
         public
@@ -216,7 +324,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         isApproved
         isLocked(tokenId)
     {
-        Proposal memory proposal = Proposals[tokenId];
+        Proposal memory proposal = ProposalMapping[tokenId];
 
         // 투자 기간 확인
         require(block.timestamp <= proposal.deadline, "The deadline is over");
@@ -233,11 +341,14 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         // 소유권 이전
         safeTransferFrom(address(this), msg.sender, tokenId, $USDC, "");
 
+        // Storage data 갱신
+        Miner memory newMiner = Miner($USDC, msg.sender);
+        ProposalMapping[tokenId].currentFunded += $USDC;
+        ProposalMapping[tokenId].investorList.push(newMiner);
+        Investors[tokenId][msg.sender] = newMiner;
+
         // 이벤트 발생
         emit Deposit(tokenId, msg.sender, $USDC);
-
-        // Storage data 갱신
-        Proposals[tokenId].currentFunded += $USDC;
     }
 
     /* 투자 철회시 사용하는 함수 */
@@ -262,16 +373,16 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         // 송금
         sendUSDC(msg.sender, address(this), value);
 
+        // 스토리지 amount 동기화
+        ProposalMapping[tokenId].currentFunded -= value;
+
         // 이벤트 발생
         emit Withdraw(tokenId, miner.minerAddress, value);
-
-        // 스토리지 amount 동기화
-        Proposals[tokenId].currentFunded -= value;
     }
 
     /* funding 성공 시 호출하는 함수 */
     function fundingSuccess(uint256 tokenId) public isApproved {
-        Proposal memory proposal = Proposals[tokenId];
+        Proposal memory proposal = ProposalMapping[tokenId];
         // 기한에 도달했는지 확인
         require(
             block.timestamp <= proposal.deadline,
@@ -296,7 +407,7 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
 
     /* Proposal이 시간이 다 찼지만 funding에 실패한 경우, 혹은 모종의 이유로 취소되는 경우 호출하는 함수 */
     function burnProposal(uint256 tokenId) public isApproved {
-        Proposal memory proposal = Proposals[tokenId];
+        Proposal memory proposal = ProposalMapping[tokenId];
 
         // msg.sender가 maker가 맞는지 확인
         require(
@@ -320,15 +431,103 @@ contract GEM is ERC1155, Ownable, ERC1155Burnable, ERC1155Supply {
         }
     }
 
-    // The following functions are overrides required by Solidity.
-    function _beforeTokenTransfer(
-        address operator,
-        address from,
-        address to,
-        uint256[] memory ids,
-        uint256[] memory amounts,
-        bytes memory data
-    ) internal override(ERC1155, ERC1155Supply) {
-        super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
+    // Proposal에 대한 Agenda 발의
+    function proposeAgenda(uint256 tokenId, string calldata tokenURI)
+        public
+        isApproved
+    {
+        // Funding이 완료된 Proposal이 맞는가?
+        require(
+            ProposalLockStatus[tokenId] == true,
+            "Proposal is not locked yet."
+        );
+
+        // Miner가 맞는가?
+        require(
+            Investors[tokenId][msg.sender].minerAddress != msg.sender,
+            "You are not allowed to send this transaction."
+        );
+
+        // 제안
+        uint256 agendaTokenId = mintAgenda(msg.sender, tokenURI);
+
+        // Storage
+        Agenda memory agenda = Agenda(tokenId, agendaTokenId, false);
+        ProposalMapping[tokenId].agendaList.push(agenda);
+        AgendaTable[agendaTokenId] = agenda;
+
+        _setURI(tokenId, tokenURI);
+    }
+
+    /* Voter로서 등록 */
+    function register(uint256 proposalId, uint256 agendaId) public isApproved {
+        // 펀딩이 끝난 상태인가?
+        require(
+            ProposalLockStatus[proposalId] == true,
+            "Proposal is not locked yet"
+        );
+        // 투자자가 맞는가?
+        require(Investors[proposalId][msg.sender].minerAddress == msg.sender);
+        // 투표를 아직 하지 않았는가?
+        require(
+            VoterMapping[agendaId][msg.sender].voted == false,
+            "You already voted"
+        );
+        // 끝나지 않은 투표인가?
+        require(
+            AgendaTable[agendaId].status == false,
+            "This agenda is already ended"
+        );
+
+        // 투표자 등록
+        VoterMapping[agendaId][msg.sender].weight = 1; // weight 계산하는 함수 필요 !
+        VoterMapping[agendaId][msg.sender].voted = false;
+    }
+
+    // Agenda에 대한 투표
+    function vote(
+        uint256 choice,
+        uint256 proposalId,
+        uint256 agendaId
+    ) public isApproved {
+        // 펀딩이 끝난 상태인가?
+        require(
+            ProposalLockStatus[proposalId] == true,
+            "Proposal is not locked yet"
+        );
+        // 투자자가 맞는가?
+        require(Investors[proposalId][msg.sender].minerAddress == msg.sender);
+        // 투표를 아직 하지 않았는가?
+        require(
+            VoterMapping[agendaId][msg.sender].voted == false,
+            "You already voted"
+        );
+        // 끝나지 않은 투표인가?
+        require(
+            AgendaTable[agendaId].status == false,
+            "This agenda is already ended"
+        );
+
+        // 투표 !
+        Voter memory voter = VoterMapping[agendaId][msg.sender];
+        voter.vote = choice;
+        voter.voted = true;
+
+        VoterMapping[agendaId][msg.sender] = voter;
+        VoterTable[agendaId].push(voter);
+    }
+
+    function closeAgenda(uint256 tokenId, address caller) external onlyOwner {
+        // chairPerson이 맞는가?
+        // 투표율이 70%가 넘었는가?
+        // 투표 종료
+    }
+
+    function viewAgenda(uint256 tokenId, address caller)
+        external
+        view
+        onlyOwner
+    {
+        // Miner중 한명인가?
     }
 }
