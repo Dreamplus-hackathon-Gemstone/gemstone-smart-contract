@@ -9,27 +9,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-interface USDC {
-    function balanceOf(address account) external view returns (uint256);
-
-    function allowance(address owner, address spender)
-        external
-        view
-        returns (uint256);
-
-    function transfer(address recipient, uint256 amount)
-        external
-        returns (bool);
-
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
-}
-
 contract MovieContract is
     Initializable,
     ERC1155Upgradeable,
@@ -199,7 +178,53 @@ contract MovieContract is
         MovieTable[tokenId].totalRevenue += movie.price;
     }
 
-    /* 투자자, 제작자 계좌에 판매 수익을 저장합니다. */
     /* 투자금에 비례하여 수익 분배 비율을 계산합니다. */
-    /* 계좌에 에치된 USDC를 출금합니다. */
+    function getRevenueRatio(uint256 tokenId, address user)
+        internal
+        view
+        returns (uint256)
+    {
+        address makerAddress = MovieTable[tokenId].maker;
+        require(
+            makerAddress == user || BuyerTable[tokenId][user] != Status.invalid,
+            "Only maker or miner can access this function"
+        );
+
+        if (makerAddress == user) return MAKER_REVENUE_RATIO;
+
+        return MINER_REVENUE_RATIO;
+    }
+
+    /* 투자금에 비례하여 수익 분배 비율을 계산합니다. */
+    function calcRevenueRatio(
+        uint256 tokenId,
+        uint256 total,
+        uint256 investment,
+        address user
+    ) internal view returns (uint256) {
+        uint256 ratio = getRevenueRatio(tokenId, user);
+
+        return ratio * (investment / total);
+    }
+}
+
+interface USDC {
+    function balanceOf(address account) external view returns (uint256);
+
+    function allowance(address owner, address spender)
+        external
+        view
+        returns (uint256);
+
+    function transfer(address recipient, uint256 amount)
+        external
+        returns (bool);
+
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
 }

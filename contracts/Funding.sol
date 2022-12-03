@@ -30,14 +30,13 @@ interface USDC {
     ) external returns (bool);
 }
 
-contract Funding is
+contract GemstoneUpgradable is
     Initializable,
     ERC1155Upgradeable,
     OwnableUpgradeable,
     ERC1155BurnableUpgradeable,
     UUPSUpgradeable
 {
-
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIdCounter;
@@ -67,7 +66,6 @@ contract Funding is
 
     USDC public USDc;
 
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -85,13 +83,12 @@ contract Funding is
         uint256 currentFunded;
         address makerAddress;
         Miner[] investorList;
-        Agenda[] agendaList;
     }
 
-    struct Agenda {
-        uint256 proposalId;
-        uint256 agendaId;
-        bool status;
+    struct Voter {
+        uint256 weight;
+        uint256 vote;
+        bool voted;
     }
 
     // tokenId와 proposal 정보 매핑
@@ -102,9 +99,6 @@ contract Funding is
 
     // tokenId => 주소 => Miner ... 개인 투자자의 정보를 확인하거나, 투자자가 맞는 지 확인할 때 사용
     mapping(uint256 => mapping(address => Miner)) Investors;
-
-    // agendaId => Agenda ... Agenda 정보 확인할 때 사용
-    mapping(uint256 => Agenda) AgendaTable;
 
     // token URI Storage
     mapping(uint256 => string) URIStorage;
@@ -129,11 +123,9 @@ contract Funding is
     }
 
     function initialize() public initializer {
-        __ERC1155_init("");
         __Ownable_init();
-        __ERC1155Burnable_init();
         __UUPSUpgradeable_init();
-        transferOwnership(msg.sender);
+        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
     }
 
     function _authorizeUpgrade(address newImplementation)
@@ -236,30 +228,6 @@ contract Funding is
         return tokenId;
     }
 
-    /* Agenda를 mint합니다. */
-    function mintAgenda(address miner, string calldata tokenURI)
-        internal
-        returns (uint256)
-    {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
-
-        emit MintAgenda(tokenId, miner);
-
-        return tokenId;
-    }
-
-    /* Movie를 mint합니다. */
-    function mintMovie(address maker, string calldata tokenURI)
-        internal
-        returns (uint256)
-    {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
-
-        emit MintAgenda(tokenId, maker);
-
-        return tokenId;
-    }
-
     function sendUSDC(
         address _to,
         address _from,
@@ -298,13 +266,16 @@ contract Funding is
         // Proposal mint
         mintProposal(targetAmount, tokenURI);
 
+        Miner[] memory newMinerList = ProposalMapping[newTokenId].investorList;
         // Storage 갱신
-        ProposalMapping[newTokenId].tokenId = newTokenId;
-        ProposalMapping[newTokenId].targetAmount = targetAmount;
-        ProposalMapping[newTokenId].deadline = deadline;
-        ProposalMapping[newTokenId].currentFunded = 0;
-        ProposalMapping[newTokenId].makerAddress = msg.sender;
-        ProposalMapping[newTokenId].tokenId = newTokenId;
+        ProposalMapping[newTokenId] = Proposal(
+            newTokenId,
+            targetAmount,
+            deadline,
+            0,
+            msg.sender,
+            newMinerList
+        );
 
         ProposalLockStatus[newTokenId] = false;
     }
@@ -422,4 +393,10 @@ contract Funding is
             }
         }
     }
+
+    /* 투자자, 제작자 계좌에 판매 수익을 저장합니다. */
+    function StoreRevenue(uint256 tokenId) internal {}
+
+    /* 계좌에 에치된 USDC를 출금합니다. */
+    function withdrawUSDC(uint256 tokenId, address sender) external onlyOwner {}
 }
