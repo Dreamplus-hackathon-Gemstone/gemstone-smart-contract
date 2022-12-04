@@ -7,6 +7,7 @@ const { expect } = require("chai");
 const { before, it } = require("mocha");
 const { upgrades, ethers } = require("hardhat");
 const hre = require("hardhat");
+const { BigNumber } = require("ethers");
 require("dotenv").config();
 
 async function deployGemstone() {
@@ -25,6 +26,35 @@ async function deployBallot() {
 	await ballot.deployed();
 
 	return { Ballot, ballot, owner, addr1, addr2 };
+}
+
+
+async function deployMovie(usdc) {
+	const Movie = await hre.ethers.getContractFactory("MovieContract")
+	const [owner, addr1, addr2, addr3, addr4] = await hre.ethers.getSigners();
+	const movie = await upgrades.deployProxy(Movie, []);
+
+	await movie.deployed();
+	(await movie.connect(owner).setUSDC(usdc.address))
+	return { Movie, movie, owner, addr1, addr2, addr3, addr4 };
+}
+
+async function deployUSDC() {
+	const USDC = await hre.ethers.getContractFactory("USD");
+	const [owner, addr1, addr2, addr3, addr4] = await hre.ethers.getSigners();
+	const usdc = await USDC.deploy();
+
+	await usdc.connect(owner).mint(addr1.address, 100000);
+	await usdc.connect(owner).mint(addr2.address, 100000);
+	await usdc.connect(owner).mint(addr3.address, 100000);
+	await usdc.connect(owner).mint(addr4.address, 100000);
+
+
+
+
+
+
+	return { USDC, usdc, owner, addr1, addr2, addr3, addr4 };
 }
 
 describe("TEST", () => {
@@ -109,6 +139,44 @@ describe("TEST", () => {
 			expect(t3).to.equal(true);
 		});
 	});
+
+
+	describe("Movie", function () {
+		it("Deploy Test", async function () {
+			const { USDC, usdc, owner, addr1, addr2, addr3, addr4 } = await loadFixture(deployUSDC);
+			const { Movie, movie } = await deployMovie(usdc);
+
+			await movie.connect(addr1).setApprovalForAll(movie.address, true);
+			await movie.connect(addr2).setApprovalForAll(movie.address, true);
+			await movie.connect(addr3).setApprovalForAll(movie.address, true);
+			await movie.connect(addr4).setApprovalForAll(movie.address, true);
+			await movie.connect(owner).setApprovalForAll(movie.address, true);
+		})
+
+		it("Mint Movie", async function () {
+			const { USDC, usdc, owner, addr1, addr2, addr3, addr4 } = await loadFixture(deployUSDC);
+
+			const { Movie, movie } = await deployMovie(usdc);
+
+			await movie.connect(addr1).setApprovalForAll(movie.address, true);
+			await movie.connect(addr2).setApprovalForAll(movie.address, true);
+			await movie.connect(addr3).setApprovalForAll(movie.address, true);
+			await movie.connect(addr4).setApprovalForAll(movie.address, true);
+			await movie.connect(owner).setApprovalForAll(movie.address, true);
+
+			await movie.connect(owner).mintMovie(20000, addr4.address, "www.naver.com");
+
+			const balanceOfAddr1 = await movie.connect(owner).balanceOfUSDC(addr1.address);
+			const balanceOfAddr2 = await movie.connect(owner).balanceOfUSDC(addr2.address);
+			const balanceOfAddr3 = await movie.connect(owner).balanceOfUSDC(addr3.address);
+			const balanceOfAddr4 = await movie.connect(owner).balanceOfUSDC(addr4.address);
+
+			expect(BigNumber.from(balanceOfAddr1)).to.deep.equal(BigNumber.from("100000"));
+			expect(BigNumber.from(balanceOfAddr2)).to.deep.equal(BigNumber.from("100000"));
+			expect(BigNumber.from(balanceOfAddr3)).to.deep.equal(BigNumber.from("100000"));
+			expect(BigNumber.from(balanceOfAddr4)).to.deep.equal(BigNumber.from("100000"));
+		})
+	})
 });
 
 

@@ -30,7 +30,7 @@ interface USDC {
     ) external returns (bool);
 }
 
-contract GemstoneUpgradable is
+contract Funding is
     Initializable,
     ERC1155Upgradeable,
     OwnableUpgradeable,
@@ -266,16 +266,12 @@ contract GemstoneUpgradable is
         // Proposal mint
         mintProposal(targetAmount, tokenURI);
 
-        Miner[] memory newMinerList = ProposalMapping[newTokenId].investorList;
         // Storage 갱신
-        ProposalMapping[newTokenId] = Proposal(
-            newTokenId,
-            targetAmount,
-            deadline,
-            0,
-            msg.sender,
-            newMinerList
-        );
+        ProposalMapping[newTokenId].tokenId = newTokenId;
+        ProposalMapping[newTokenId].targetAmount = targetAmount;
+        ProposalMapping[newTokenId].deadline = deadline;
+        ProposalMapping[newTokenId].currentFunded = 0;
+        ProposalMapping[newTokenId].makerAddress = msg.sender;
 
         ProposalLockStatus[newTokenId] = false;
     }

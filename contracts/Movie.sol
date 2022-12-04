@@ -60,7 +60,6 @@ contract MovieContract is
         __Ownable_init();
         __ERC1155Burnable_init();
         __UUPSUpgradeable_init();
-        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
     }
 
     function setURI(string memory newuri) public onlyOwner {
@@ -81,6 +80,10 @@ contract MovieContract is
         override
         onlyOwner
     {}
+
+    function setUSDC(address contractAddr) external onlyOwner {
+        USDc = USDC(contractAddr);
+    }
 
     /* 구매 여부를 확인합니다. */
     /* 투자자/제작자 여부를 확인합니다. */
@@ -154,7 +157,7 @@ contract MovieContract is
         address makerAddress,
         string calldata tokenURI
     ) external onlyOwner returns (uint256) {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
+        uint256 tokenId = mintNFT(owner(), 1, tokenURI);
 
         MovieTable[tokenId] = Movie(price, 0, makerAddress, tokenURI);
 
