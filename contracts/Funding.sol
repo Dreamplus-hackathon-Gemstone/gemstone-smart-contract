@@ -221,9 +221,9 @@ contract Funding is
         internal
         returns (uint256)
     {
-        uint256 tokenId = mintNFT(address(this), amount, tokenURI);
+        uint256 tokenId = mintNFT(owner(), amount, tokenURI);
 
-        emit MintProposal(tokenId, address(this));
+        emit MintProposal(tokenId, owner());
 
         return tokenId;
     }
@@ -253,23 +253,16 @@ contract Funding is
     ) public payable isApproved {
         // 최소 target amount
         require(
-            targetAmount > 10000000000,
+            targetAmount >= 10000000000,
             "Minimum target amount is 10,000$, Check your target amount"
         );
-
-        // tokenID 증가
-        _tokenIdCounter.increment();
-
-        // tokenID
-        uint256 newTokenId = _tokenIdCounter.current();
-
         // Proposal mint
-        mintProposal(targetAmount, tokenURI);
+        uint256 newTokenId = mintProposal(targetAmount, tokenURI);
 
         // Storage 갱신
         ProposalMapping[newTokenId].tokenId = newTokenId;
         ProposalMapping[newTokenId].targetAmount = targetAmount;
-        ProposalMapping[newTokenId].deadline = deadline;
+        ProposalMapping[newTokenId].deadline = block.timestamp + deadline;
         ProposalMapping[newTokenId].currentFunded = 0;
         ProposalMapping[newTokenId].makerAddress = msg.sender;
 

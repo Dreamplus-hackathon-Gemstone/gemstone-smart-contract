@@ -239,7 +239,7 @@ contract MovieContract is
 
     /* 투자금에 비례하여 수익 분배 비율을 계산합니다. */
     function getRevenueRatio(uint256 tokenId, address user)
-        internal
+        public
         view
         returns (uint256)
     {
@@ -252,18 +252,6 @@ contract MovieContract is
         if (makerAddress == user) return MAKER_REVENUE_RATIO;
 
         return MINER_REVENUE_RATIO;
-    }
-
-    /* 투자금에 비례하여 수익 분배 비율을 계산합니다. */
-    function calcRevenueRatio(
-        uint256 tokenId,
-        uint256 total,
-        uint256 investment,
-        address user
-    ) internal view returns (uint256) {
-        uint256 ratio = getRevenueRatio(tokenId, user);
-
-        return ratio * (investment / total);
     }
 }
 
