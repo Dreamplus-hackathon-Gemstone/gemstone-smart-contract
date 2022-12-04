@@ -83,13 +83,6 @@ contract GemstoneUpgradable is
         uint256 currentFunded;
         address makerAddress;
         Miner[] investorList;
-        Agenda[] agendaList;
-    }
-
-    struct Agenda {
-        uint256 proposalId;
-        uint256 agendaId;
-        bool status;
     }
 
     struct Voter {
@@ -106,15 +99,6 @@ contract GemstoneUpgradable is
 
     // tokenId => 주소 => Miner ... 개인 투자자의 정보를 확인하거나, 투자자가 맞는 지 확인할 때 사용
     mapping(uint256 => mapping(address => Miner)) Investors;
-
-    // agendaId => Agenda ... Agenda 정보 확인할 때 사용
-    mapping(uint256 => Agenda) AgendaTable;
-
-    // agendaId => Voter[] ... 투표가 끝났을 때 투표자 목록으로써 사용
-    mapping(uint256 => Voter[]) VoterTable;
-
-    // agendaId => address => Voter ... 해당 Agenda에 투표를 했는지, 확인할 때 사용
-    mapping(uint256 => mapping(address => Voter)) VoterMapping;
 
     // token URI Storage
     mapping(uint256 => string) URIStorage;
@@ -244,30 +228,6 @@ contract GemstoneUpgradable is
         return tokenId;
     }
 
-    /* Agenda를 mint합니다. */
-    function mintAgenda(address miner, string calldata tokenURI)
-        internal
-        returns (uint256)
-    {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
-
-        emit MintAgenda(tokenId, miner);
-
-        return tokenId;
-    }
-
-    /* Movie를 mint합니다. */
-    function mintMovie(address maker, string calldata tokenURI)
-        internal
-        returns (uint256)
-    {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
-
-        emit MintAgenda(tokenId, maker);
-
-        return tokenId;
-    }
-
     function sendUSDC(
         address _to,
         address _from,
@@ -312,7 +272,6 @@ contract GemstoneUpgradable is
         ProposalMapping[newTokenId].deadline = deadline;
         ProposalMapping[newTokenId].currentFunded = 0;
         ProposalMapping[newTokenId].makerAddress = msg.sender;
-        ProposalMapping[newTokenId].tokenId = newTokenId;
 
         ProposalLockStatus[newTokenId] = false;
     }
@@ -431,103 +390,9 @@ contract GemstoneUpgradable is
         }
     }
 
-    // Proposal에 대한 Agenda 발의
-    function proposeAgenda(uint256 tokenId, string calldata tokenURI)
-        public
-        isApproved
-    {
-        // Funding이 완료된 Proposal이 맞는가?
-        require(
-            ProposalLockStatus[tokenId] == true,
-            "Proposal is not locked yet."
-        );
+    /* 투자자, 제작자 계좌에 판매 수익을 저장합니다. */
+    function StoreRevenue(uint256 tokenId) internal {}
 
-        // Miner가 맞는가?
-        require(
-            Investors[tokenId][msg.sender].minerAddress != msg.sender,
-            "You are not allowed to send this transaction."
-        );
-
-        // 제안
-        uint256 agendaTokenId = mintAgenda(msg.sender, tokenURI);
-
-        // Storage
-        Agenda memory agenda = Agenda(tokenId, agendaTokenId, false);
-        ProposalMapping[tokenId].agendaList.push(agenda);
-        AgendaTable[agendaTokenId] = agenda;
-
-        _setURI(tokenId, tokenURI);
-    }
-
-    /* Voter로서 등록 */
-    function register(uint256 proposalId, uint256 agendaId) public isApproved {
-        // 펀딩이 끝난 상태인가?
-        require(
-            ProposalLockStatus[proposalId] == true,
-            "Proposal is not locked yet"
-        );
-        // 투자자가 맞는가?
-        require(Investors[proposalId][msg.sender].minerAddress == msg.sender);
-        // 투표를 아직 하지 않았는가?
-        require(
-            VoterMapping[agendaId][msg.sender].voted == false,
-            "You already voted"
-        );
-        // 끝나지 않은 투표인가?
-        require(
-            AgendaTable[agendaId].status == false,
-            "This agenda is already ended"
-        );
-
-        // 투표자 등록
-        VoterMapping[agendaId][msg.sender].weight = 1; // weight 계산하는 함수 필요 !
-        VoterMapping[agendaId][msg.sender].voted = false;
-    }
-
-    // Agenda에 대한 투표
-    function vote(
-        uint256 choice,
-        uint256 proposalId,
-        uint256 agendaId
-    ) public isApproved {
-        // 펀딩이 끝난 상태인가?
-        require(
-            ProposalLockStatus[proposalId] == true,
-            "Proposal is not locked yet"
-        );
-        // 투자자가 맞는가?
-        require(Investors[proposalId][msg.sender].minerAddress == msg.sender);
-        // 투표를 아직 하지 않았는가?
-        require(
-            VoterMapping[agendaId][msg.sender].voted == false,
-            "You already voted"
-        );
-        // 끝나지 않은 투표인가?
-        require(
-            AgendaTable[agendaId].status == false,
-            "This agenda is already ended"
-        );
-
-        // 투표 !
-        Voter memory voter = VoterMapping[agendaId][msg.sender];
-        voter.vote = choice;
-        voter.voted = true;
-
-        VoterMapping[agendaId][msg.sender] = voter;
-        VoterTable[agendaId].push(voter);
-    }
-
-    function closeAgenda(uint256 tokenId, address caller) external onlyOwner {
-        // chairPerson이 맞는가?
-        // 투표율이 70%가 넘었는가?
-        // 투표 종료
-    }
-
-    function viewAgenda(uint256 tokenId, address caller)
-        external
-        view
-        onlyOwner
-    {
-        // Miner중 한명인가?
-    }
+    /* 계좌에 에치된 USDC를 출금합니다. */
+    function withdrawUSDC(uint256 tokenId, address sender) external onlyOwner {}
 }

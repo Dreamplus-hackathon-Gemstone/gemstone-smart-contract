@@ -1,47 +1,31 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
-
-interface USDC {
-    function balanceOf(address account) external view returns (uint256);
-
-    function allowance(address owner, address spender)
-        external
-        view
-        returns (uint256);
-
-    function transfer(address recipient, uint256 amount)
-        external
-        returns (bool);
-
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
-}
+import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 
 contract MovieContract is
     Initializable,
-    ERC1155Upgradeable,
+    ERC721Upgradeable,
+    ERC721EnumerableUpgradeable,
+    ERC721URIStorageUpgradeable,
+    PausableUpgradeable,
     OwnableUpgradeable,
-    ERC1155BurnableUpgradeable,
+    ERC721BurnableUpgradeable,
     UUPSUpgradeable
 {
+    using CountersUpgradeable for CountersUpgradeable.Counter;
+
+    CountersUpgradeable.Counter private _tokenIdCounter;
+
     event MintMovie(uint256 tokenId, address indexed maker);
-
-    using Counters for Counters.Counter;
-
-    Counters.Counter private _tokenIdCounter;
 
     uint256 public constant MAKER_REVENUE_RATIO = 50;
     uint256 public constant MINER_REVENUE_RATIO = 40;
@@ -77,24 +61,41 @@ contract MovieContract is
     mapping(uint256 => string) URIStorage;
 
     function initialize() public initializer {
-        __ERC1155_init("");
+        __ERC721_init("Movie", "GMOVIE");
+        __ERC721Enumerable_init();
+        __ERC721URIStorage_init();
+        __Pausable_init();
         __Ownable_init();
-        __ERC1155Burnable_init();
+        __ERC721Burnable_init();
         __UUPSUpgradeable_init();
-        USDc = USDC(0x0FA8781a83E46826621b3BC094Ea2A0212e71B23);
     }
 
-    function setURI(string memory newuri) public onlyOwner {
-        _setURI(newuri);
+    function pause() public onlyOwner {
+        _pause();
     }
 
-    function mint(
-        address account,
-        uint256 id,
-        uint256 amount,
-        bytes memory data
-    ) public onlyOwner {
-        _mint(account, id, amount, data);
+    function unpause() public onlyOwner {
+        _unpause();
+    }
+
+    function safeMint(address to, string memory uri) public onlyOwner {
+        uint256 tokenId = _tokenIdCounter.current();
+        _tokenIdCounter.increment();
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, uri);
+    }
+
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 batchSize
+    )
+        internal
+        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
+        whenNotPaused
+    {
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
     }
 
     function _authorizeUpgrade(address newImplementation)
@@ -103,8 +104,46 @@ contract MovieContract is
         onlyOwner
     {}
 
+    // The following functions are overrides required by Solidity.
+
+    function _burn(uint256 tokenId)
+        internal
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
+    {
+        super._burn(tokenId);
+    }
+
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
+        returns (string memory)
+    {
+        return super.tokenURI(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+
+    /* USDC 컨트랙트를 정의합니다. */
+    function setUSDC(address contractAddr) external onlyOwner {
+        USDc = USDC(contractAddr);
+    }
+
+    /* 영화 정보를 확인합니다. */
+    function getMovie(uint256 tokenId) public view returns (Movie memory) {
+        return MovieTable[tokenId];
+    }
+
     /* 구매 여부를 확인합니다. */
     /* 투자자/제작자 여부를 확인합니다. */
+
     /* USDC의 잔액을 확인합니다. */
     function balanceOfUSDC(address caller) public view returns (uint256) {
         return USDc.balanceOf(caller);
@@ -147,24 +186,23 @@ contract MovieContract is
     }
 
     /* 해당 tokenId의 tokenURI를 관리하는 함수입니다. URIStorage라는 mapping 자료구조에 값을 넣어 저장합니다. */
-    function _setURI(uint256 tokenId, string memory tokenURI) internal {
-        URIStorage[tokenId] = tokenURI;
+    function _setURI(uint256 tokenId, string memory _tokenURI) internal {
+        URIStorage[tokenId] = _tokenURI;
     }
 
     /* NFT minting, dest 주소로 amount개를 minting하고, tokenURI를 세팅합니다. */
-    function mintNFT(
-        address dest,
-        uint256 amount,
-        string memory tokenURI
-    ) internal returns (uint256) {
+    function mintNFT(address dest, string memory _tokenURI)
+        internal
+        returns (uint256)
+    {
         // tokenID 증가
         _tokenIdCounter.increment();
         uint256 newTokenId = _tokenIdCounter.current();
 
         // mint
-        _mint(dest, newTokenId, amount, "");
+        _mint(dest, newTokenId);
         // setURI
-        _setURI(newTokenId, tokenURI);
+        _setURI(newTokenId, _tokenURI);
 
         return newTokenId;
     }
@@ -173,11 +211,11 @@ contract MovieContract is
     function mintMovie(
         uint256 price,
         address makerAddress,
-        string calldata tokenURI
+        string calldata _tokenURI
     ) external onlyOwner returns (uint256) {
-        uint256 tokenId = mintNFT(address(this), 1, tokenURI);
+        uint256 tokenId = mintNFT(owner(), _tokenURI);
 
-        MovieTable[tokenId] = Movie(price, 0, makerAddress, tokenURI);
+        MovieTable[tokenId] = Movie(price, 0, makerAddress, _tokenURI);
 
         // mint
         emit MintMovie(tokenId, makerAddress);
@@ -192,14 +230,48 @@ contract MovieContract is
         /* 구매 기록이 없는지 확인합니다. */
         require(BuyerTable[tokenId][buyer] == Status.invalid);
 
-        sendUSDC(buyer, movie.maker, movie.price);
+        sendUSDC(address(this), buyer, movie.price);
 
         BuyerTable[tokenId][buyer] = Status.available;
 
         MovieTable[tokenId].totalRevenue += movie.price;
     }
 
-    /* 투자자, 제작자 계좌에 판매 수익을 저장합니다. */
     /* 투자금에 비례하여 수익 분배 비율을 계산합니다. */
-    /* 계좌에 에치된 USDC를 출금합니다. */
+    function getRevenueRatio(uint256 tokenId, address user)
+        public
+        view
+        returns (uint256)
+    {
+        address makerAddress = MovieTable[tokenId].maker;
+        require(
+            makerAddress == user || BuyerTable[tokenId][user] != Status.invalid,
+            "Only maker or miner can access this function"
+        );
+
+        if (makerAddress == user) return MAKER_REVENUE_RATIO;
+
+        return MINER_REVENUE_RATIO;
+    }
+}
+
+interface USDC {
+    function balanceOf(address account) external view returns (uint256);
+
+    function allowance(address owner, address spender)
+        external
+        view
+        returns (uint256);
+
+    function transfer(address recipient, uint256 amount)
+        external
+        returns (bool);
+
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
 }
